@@ -47,6 +47,66 @@ private func pids(_ server: Int32, _ snapshot: [ProcessRecord]) -> Set<Int32> {
     #expect(pids(100, bunServe) == [100])
 }
 
+@Test func processTitleRunnerIsIncluded() {
+    // node rewrites argv via process.title: KERN_PROCARGS2 yields ["npm run dev", "", "", ""].
+    let snapshot = [
+        rec(50, name: "bash"),
+        rec(90, ppid: 50, name: "node", args: ["npm run dev", "", "", ""]),
+        rec(100, ppid: 90, args: ["node", "/p/node_modules/.bin/vite", "--port", "5173"], ports: [5173]),
+    ]
+    #expect(pids(100, snapshot) == [90, 100])
+    let pnpm = [rec(90, name: "node", args: ["pnpm dev"]), rec(100, ppid: 90, ports: [3000])]
+    #expect(pids(100, pnpm) == [90, 100])
+    let bunRun = [rec(90, name: "bun", args: ["bun run dev"]), rec(100, ppid: 90, ports: [3000])]
+    #expect(pids(100, bunRun) == [90, 100])
+}
+
+@Test func nextSupervisorAndRunnerAreIncluded() {
+    // npm run dev -> node .bin/next dev -> next-server (listening) -> postcss worker.
+    let snapshot = [
+        rec(50, name: "zsh"),
+        rec(90, ppid: 50, name: "node", args: ["npm run dev", "", "", ""]),
+        rec(91, ppid: 90, name: "node", args: ["node", "/p/node_modules/.bin/next", "dev", "-p", "3000"]),
+        rec(100, ppid: 91, name: "node", args: ["next-server (v16.1.6)", ""], ports: [3000]),
+        rec(101, ppid: 100, name: "node", args: ["node", "/p/.next/dev/build/postcss.js", "61090"]),
+    ]
+    #expect(pids(100, snapshot) == [90, 91, 100, 101])
+}
+
+@Test func walkStopsAtNonWrappersAndListeningWrappers() {
+    // A plain node parent (not a runner/supervisor) stops the walk, even above a supervisor.
+    let plain = [
+        rec(80, name: "node", args: ["node", "/p/scripts/dev.js"]),
+        rec(91, ppid: 80, name: "node", args: ["node", "/p/node_modules/.bin/next", "dev"]),
+        rec(100, ppid: 91, ports: [3000]),
+    ]
+    #expect(pids(100, plain) == [91, 100])
+    // `next build`/`next start` are not dev supervisors.
+    let start = [rec(91, name: "node", args: ["node", "/p/node_modules/.bin/next", "start"]),
+                 rec(100, ppid: 91, ports: [3000])]
+    #expect(pids(100, start) == [100])
+    // A wrapper that listens itself is its own server: spared.
+    let listening = [rec(90, name: "node", args: ["npm run dev"], ports: [4000]),
+                     rec(100, ppid: 90, ports: [3000])]
+    #expect(pids(100, listening) == [100])
+    // A supervisor whose runner also hosts another listening server: runner spared.
+    let shared = [
+        rec(90, name: "node", args: ["npm run dev"]),
+        rec(91, ppid: 90, name: "node", args: ["node", "/p/node_modules/.bin/next", "dev"]),
+        rec(100, ppid: 91, ports: [3000]),
+        rec(200, ppid: 90, ports: [3001]),
+    ]
+    #expect(pids(100, shared) == [91, 100])
+    // Claude Code above the runner is never included.
+    let claude = [
+        rec(70, name: "2.1.306", args: ["claude", "--verbose"],
+            path: "/Users/me/.local/share/claude/versions/2.1.306"),
+        rec(90, ppid: 70, name: "node", args: ["npm run dev"]),
+        rec(100, ppid: 90, ports: [3000]),
+    ]
+    #expect(pids(100, claude) == [90, 100])
+}
+
 @Test func spareSiblingsUnderRunner() {
     let concurrently = [
         rec(80, name: "node", args: ["node", "/proj/node_modules/.bin/concurrently", "a", "b"]),

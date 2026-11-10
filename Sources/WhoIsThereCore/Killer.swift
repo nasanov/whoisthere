@@ -6,9 +6,10 @@ public enum KillPlanner {
     private static let shells: Set<String> = ["zsh", "bash", "sh", "fish", "login", "tmux"]
     private static let runnerNames: Set<String> = ["npm", "pnpm", "yarn", "npx", "pnpx"]
     private static let runnerScripts = ["npm-cli.js", "pnpm.cjs", "yarn.js"]
+    private static let supervisorBins: Set<String> = ["next", "nuxt", "nuxi"]
 
-    /// The server and its descendants, plus its direct parent when that parent is a
-    /// package runner with no other listening descendants. Returns `[]` when the server
+    /// The server and its descendants, plus the chain of wrappers above it (package
+    /// runner, framework dev supervisor) that have no other listening descendants. Returns `[]` when the server
     /// identity is no longer in the snapshot (exited or PID reused) or the server itself
     /// is excluded. `enrich` fills in details (path, argv) the snapshot may lack; it is
     /// applied to every candidate before it is checked.
@@ -41,15 +42,21 @@ public enum KillPlanner {
             index += 1
         }
 
-        if let raw = byPid[root.ppid], !seen.contains(raw.pid) {
+        // Walk up through wrappers (package runners, framework dev supervisors) that exist
+        // only to run this server: no listening sockets of their own and no other
+        // listening descendants. The first non-wrapper ends the walk.
+        var current = root
+        while let raw = byPid[current.ppid], seen.insert(raw.pid).inserted {
             let parent = enrich(raw)
-            if isPackageRunner(parent), !isExcluded(parent, currentUID: currentUID) {
-                let targeted = Set(result.map(\.pid))
-                let othersListening = descendants(of: parent.pid, children: children).contains {
-                    !targeted.contains($0.pid) && !$0.listeningPorts.isEmpty
-                }
-                if !othersListening { result.append(parent) }
+            guard parent.listeningPorts.isEmpty, isWrapper(parent),
+                  !isExcluded(parent, currentUID: currentUID) else { break }
+            let targeted = Set(result.map(\.pid))
+            let othersListening = descendants(of: parent.pid, children: children).contains {
+                !targeted.contains($0.pid) && !$0.listeningPorts.isEmpty
             }
+            if othersListening { break }
+            result.append(parent)
+            current = parent
         }
         return result.map(\.identity)
     }
@@ -78,16 +85,38 @@ public enum KillPlanner {
         isBarrier(p, currentUID: currentUID) || shells.contains(p.name)
     }
 
+    private static func isWrapper(_ p: ProcessRecord) -> Bool {
+        isPackageRunner(p) || isDevSupervisor(p)
+    }
+
+    /// argv split into words. node rewrites argv via process.title, so KERN_PROCARGS2
+    /// can yield a single "npm run dev" argument followed by empty strings.
+    private static func words(_ p: ProcessRecord) -> [String] {
+        p.arguments.flatMap { $0.split(whereSeparator: \.isWhitespace).map(String.init) }
+    }
+
     private static func isPackageRunner(_ p: ProcessRecord) -> Bool {
-        let base = p.arguments.first.map { ($0 as NSString).lastPathComponent }
+        if runnerNames.contains(p.name) { return true }
+        let words = words(p)
+        let base = words.first.map { ($0 as NSString).lastPathComponent }
         if let base, runnerNames.contains(base) { return true }
-        if p.arguments.contains(where: { arg in runnerScripts.contains { arg.hasSuffix($0) } }) {
+        if words.contains(where: { word in runnerScripts.contains { word.hasSuffix($0) } }) {
             return true
         }
         if let base, base == "bun" || base == "deno" {
-            return p.arguments.dropFirst().contains { $0 == "run" || $0 == "task" }
+            return words.dropFirst().contains { $0 == "run" || $0 == "task" }
         }
         return false
+    }
+
+    /// A JS process running `next dev` / `nuxt dev`: it forks the listening server and
+    /// supervises it.
+    private static func isDevSupervisor(_ p: ProcessRecord) -> Bool {
+        guard FrameworkDetector.isJSRuntime(p) else { return false }
+        let words = words(p)
+        return zip(words, words.dropFirst()).contains { script, command in
+            supervisorBins.contains((script as NSString).lastPathComponent) && command == "dev"
+        }
     }
 }
 
