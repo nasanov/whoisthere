@@ -143,3 +143,28 @@ private let chain = [
     try json.write(to: outside.appendingPathComponent("package.json"))
     #expect(ServerBuilder.nearestPackageJSON(from: outside.path, home: home.path) == json)
 }
+
+@Test func nilStarterIsRedetectedWhileParentIsLive() {
+    let mem = memory()
+    let b = builder()
+    // First sighting: the parent chain isn't recognizable yet (e.g. ancestors not enriched).
+    let s1 = b.build(snapshot: [rec(100, ppid: 1, name: "zsh"), rec(300, ppid: 100, ports: [3000])],
+                     showAll: false, memory: mem)
+    #expect(s1[0].starter == nil)
+    // Later the Claude ancestor is visible: detected and remembered.
+    let s2 = b.build(snapshot: chain + [rec(300, ppid: 200, ports: [3000])], showAll: false, memory: mem)
+    #expect(s2[0].starter == .claude)
+    #expect(mem.recall(rec(300).identity)?.starter == .claude)
+    // A remembered non-nil starter is kept even if the chain changes.
+    let terminalChain = [rec(100, ppid: 1, name: "Terminal")]
+    let s3 = b.build(snapshot: terminalChain + [rec(300, ppid: 100, ports: [3000])], showAll: false, memory: mem)
+    #expect(s3[0].starter == .claude)
+}
+
+@Test func orphanedNilStarterIsNotRedetected() {
+    let mem = memory()
+    let server = rec(300, ppid: 1, ports: [3000])
+    mem.remember(server.identity, Remembered(starter: nil, git: nil))
+    let s = builder().build(snapshot: [server], showAll: false, memory: mem)
+    #expect(s[0].starter == nil)
+}

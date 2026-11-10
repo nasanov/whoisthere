@@ -30,11 +30,16 @@ public struct ServerBuilder: Sendable {
             let remembered = memory.recall(id)
             let folderExists = p.cwd.map(fileExists) ?? false
             let git: GitInfo? = folderExists ? p.cwd.flatMap(resolveGit) : remembered?.git
-            let starter = remembered != nil
-                ? remembered?.starter
-                : StarterDetector.detect(ancestors: ancestors(of: p, in: byPID))
-            if remembered == nil {
-                memory.remember(id, Remembered(starter: starter, git: git))
+            // A remembered starter is kept (it survives orphaning). A remembered nil is
+            // retried while the process still has a live parent chain to inspect.
+            let starter: Starter?
+            if let remembered, remembered.starter != nil || p.ppid == 1 {
+                starter = remembered.starter
+            } else {
+                starter = StarterDetector.detect(ancestors: ancestors(of: p, in: byPID))
+                if remembered == nil || starter != nil {
+                    memory.remember(id, Remembered(starter: starter, git: remembered?.git ?? git))
+                }
             }
 
             let packageJSON = folderExists && FrameworkDetector.isJSRuntime(p)
