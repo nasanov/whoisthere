@@ -26,10 +26,33 @@ private final class FakeSource: ProcessSource, @unchecked Sendable {
     }
 }
 
+/// First snapshot() call blocks until released and returns `stale`; later calls return `fresh`.
+private final class SlowFirstSource: ProcessSource, @unchecked Sendable {
+    private let lock = NSLock()
+    private var calls = 0
+    private let stale: [ProcessRecord], fresh: [ProcessRecord]
+    let firstStarted = DispatchSemaphore(value: 0)
+    let release = DispatchSemaphore(value: 0)
+    func waitForFirst() { firstStarted.wait() }
+
+    init(stale: [ProcessRecord], fresh: [ProcessRecord]) { self.stale = stale; self.fresh = fresh }
+
+    func snapshot() throws -> [ProcessRecord] {
+        let n = lock.withLock { calls += 1; return calls }
+        if n == 1 {
+            firstStarted.signal()
+            release.wait()
+            return stale
+        }
+        return fresh
+    }
+}
+
 private final class FakeSignaler: ProcessSignaler, @unchecked Sendable {
     private let lock = NSLock()
     private var alive: [Int32: Date] = [:]
     private var sent: [(Int32, Int32)] = []
+    var ignoreTerm = false
     var onSend: (@Sendable (Int32, Int32) -> Void)?
 
     init(alive: [Int32: Date]) { self.alive = alive }
@@ -39,7 +62,7 @@ private final class FakeSignaler: ProcessSignaler, @unchecked Sendable {
     func send(_ signal: Int32, to pid: Int32) {
         lock.withLock {
             sent.append((signal, pid))
-            if signal == SIGTERM || signal == SIGKILL { alive[pid] = nil }
+            if signal == SIGKILL || (signal == SIGTERM && !ignoreTerm) { alive[pid] = nil }
         }
         onSend?(signal, pid)
     }
@@ -54,12 +77,13 @@ private func server(pid: Int32 = 100) -> ProcessRecord {
 }
 
 @MainActor
-private func makeStore(source: FakeSource, signaler: FakeSignaler) -> ServerStore {
+private func makeStore(source: ProcessSource, signaler: FakeSignaler,
+                       grace: Duration = .milliseconds(50)) -> ServerStore {
     let builder = ServerBuilder(home: "/Users/me", currentUID: uid, fileExists: { _ in true },
                                 resolveGit: { _ in nil }, readPackageJSON: { _ in nil })
     let memory = ServerMemory(fileURL: FileManager.default.temporaryDirectory
         .appendingPathComponent("whoisthere-\(UUID().uuidString)/memory.json"))
-    let killer = Killer(signaler: signaler, grace: .milliseconds(50), pollInterval: .milliseconds(10))
+    let killer = Killer(signaler: signaler, grace: grace, pollInterval: .milliseconds(10))
     return ServerStore(source: source, builder: builder, memory: memory, killer: killer, currentUID: uid)
 }
 
@@ -103,15 +127,29 @@ private func makeStore(source: FakeSource, signaler: FakeSignaler) -> ServerStor
         #expect(store.servers.count == 1)
     }
 
-    @Test func killSurvivesCallerCancellation() async {
+    @Test func killSurvivesCallerCancellation() async throws {
         let source = FakeSource([server()])
-        let signaler = FakeSignaler(alive: [100: t0]) // SIGTERM kills it in the fake
-        let store = makeStore(source: source, signaler: signaler)
+        let signaler = FakeSignaler(alive: [100: t0])
+        signaler.ignoreTerm = true // stays alive until SIGKILL
+        let store = makeStore(source: source, signaler: signaler, grace: .milliseconds(200))
         await store.refresh()
         let target = store.servers[0]
         let caller = Task { await store.kill(target) }
+        try await Task.sleep(for: .milliseconds(60)) // inside the grace period
         caller.cancel()
         await caller.value
         #expect(signaler.signals.contains { $0.0 == SIGTERM && $0.1 == 100 })
+        #expect(signaler.signals.contains { $0.0 == SIGKILL && $0.1 == 100 })
+    }
+
+    @Test func staleRefreshDoesNotOverwriteNewer() async {
+        let source = SlowFirstSource(stale: [server(pid: 100)], fresh: [])
+        let store = makeStore(source: source, signaler: FakeSignaler(alive: [:]))
+        let first = Task { await store.refresh() }
+        await Task.detached { source.waitForFirst() }.value
+        await store.refresh() // newer, returns fresh (empty)
+        source.release.signal()
+        await first.value
+        #expect(store.servers.isEmpty)
     }
 }

@@ -27,6 +27,7 @@ public final class ServerStore {
     @ObservationIgnored private let killer: Killer
     @ObservationIgnored private let currentUID: UInt32
     @ObservationIgnored private var pollTask: Task<Void, Never>?
+    @ObservationIgnored private var refreshGeneration = 0
 
     public init(source: ProcessSource, builder: ServerBuilder, memory: ServerMemory,
                 killer: Killer, currentUID: UInt32) {
@@ -48,12 +49,15 @@ public final class ServerStore {
     }
 
     public func refresh() async {
+        refreshGeneration += 1
+        let generation = refreshGeneration
         let source = source, builder = builder, memory = memory, showAll = showAll
         let result = await Task.detached(priority: .userInitiated) { () -> [DevServer]? in
             guard let snapshot = try? source.snapshot() else { return nil }
             return builder.build(snapshot: snapshot, showAll: showAll, memory: memory)
         }.value
-        guard let result else { return }
+        // A newer refresh started meanwhile; its result supersedes this (possibly stale) one.
+        guard let result, generation == refreshGeneration else { return }
         if result != servers { servers = result }
         try? memory.save()
     }
@@ -77,13 +81,16 @@ public final class ServerStore {
         pollTask?.cancel()
         pollTask = Task { [weak self] in
             var first = refreshImmediately
-            while !Task.isCancelled {
-                guard let self else { return }
-                if first { await self.refresh() }
+            // No strong reference to the store is held across the sleep.
+            while !Task.isCancelled, let interval = await self?.tick(refresh: first) {
                 first = true
-                let interval = self.pollInterval
                 try? await Task.sleep(for: interval)
             }
         }
+    }
+
+    private func tick(refresh shouldRefresh: Bool) async -> Duration {
+        if shouldRefresh { await refresh() }
+        return pollInterval
     }
 }
