@@ -51,23 +51,51 @@ struct ServerListView: View {
                 Spacer()
                 Button("Quit") { NSApp.terminate(nil) }
             }
-            .buttonStyle(.borderless)
-            .padding(.horizontal, 8)
-            .padding(.bottom, 4)
+            .buttonStyle(FooterButtonStyle())
+            .padding(.horizontal, 2)
+            .padding(.bottom, 2)
         }
         .padding(6)
         .frame(width: 420)
         .background(MenuWindowObserver { store.isMenuOpen = $0 })
+        .modifier(CaptureOpenSettings())
         .onChange(of: store.servers) { _, servers in
             expanded.formIntersection(servers.map(\.id))
         }
     }
 
     private func toggle(_ id: ProcessIdentity) {
-        if expanded.contains(id) {
-            expanded.remove(id)
-        } else {
-            expanded.insert(id)
+        withAnimation(.snappy(duration: 0.22)) {
+            if expanded.contains(id) {
+                expanded.remove(id)
+            } else {
+                expanded.insert(id)
+            }
+        }
+    }
+}
+
+/// Plain text button with a rounded highlight on hover and a darker one while pressed.
+private struct FooterButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HoverBody(configuration: configuration)
+    }
+
+    private struct HoverBody: View {
+        let configuration: Configuration
+        @State private var isHovered = false
+
+        var body: some View {
+            configuration.label
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(Color.primary.opacity(configuration.isPressed ? 0.16 : isHovered ? 0.08 : 0))
+                )
+                .contentShape(Rectangle())
+                .onHover { isHovered = $0 }
+                .animation(.easeOut(duration: 0.1), value: isHovered)
         }
     }
 }

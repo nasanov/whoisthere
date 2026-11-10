@@ -17,9 +17,15 @@ struct ServerRowView: View {
     var body: some View {
         VStack(spacing: 0) {
             row
-            if isExpanded {
-                details
+            // The details slide down inside their own clipped container, so they're revealed
+            // from the row's bottom edge instead of showing through the translucent row.
+            VStack(spacing: 0) {
+                if isExpanded {
+                    details
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
             }
+            .clipped()
         }
     }
 
@@ -30,6 +36,7 @@ struct ServerRowView: View {
             Text(String(server.primaryPort))
                 .font(.system(.body, design: .monospaced).weight(.semibold))
                 .frame(width: 44, alignment: .leading)
+                .opacity(server.stale == nil ? 1 : 0.55)
 
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 5) {
@@ -51,6 +58,8 @@ struct ServerRowView: View {
                     .truncationMode(.middle)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            // Fade only the info: the actions stay fully opaque so they don't read as disabled.
+            .opacity(server.stale == nil ? 1 : 0.55)
 
             HStack(spacing: 2) {
                 if let url = server.url {
@@ -62,7 +71,7 @@ struct ServerRowView: View {
                         NSPasteboard.general.setString(url.absoluteString, forType: .string)
                     }
                 }
-                IconButton(symbol: isExpanded ? "chevron.up" : "chevron.down", help: "Details",
+                IconButton(symbol: "chevron.down", rotation: isExpanded ? 180 : 0, help: "Details",
                            action: onToggleDetails)
                 if isKilling {
                     ProgressView()
@@ -80,7 +89,6 @@ struct ServerRowView: View {
             RoundedRectangle(cornerRadius: 6)
                 .fill(isHovered || isExpanded ? Color.primary.opacity(0.08) : Color.clear)
         )
-        .opacity(server.stale == nil ? 1 : 0.55)
         .onHover { isHovered = $0 }
     }
 
@@ -168,6 +176,7 @@ private struct Tag: View {
 
 private struct IconButton: View {
     let symbol: String
+    var rotation: Double = 0
     let help: String
     var tint: Color? = nil
     let action: () -> Void
@@ -176,12 +185,39 @@ private struct IconButton: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 13))
+                .rotationEffect(.degrees(rotation))
                 .frame(width: 24, height: 24)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.borderless)
-        .foregroundStyle(tint ?? .primary)
+        .buttonStyle(IconButtonStyle(tint: tint))
         .help(help)
+    }
+}
+
+/// Borderless icon button with a rounded highlight on hover and a darker one while pressed.
+private struct IconButtonStyle: ButtonStyle {
+    let tint: Color?
+
+    func makeBody(configuration: Configuration) -> some View {
+        HoverBody(configuration: configuration, tint: tint)
+    }
+
+    private struct HoverBody: View {
+        let configuration: Configuration
+        let tint: Color?
+        @State private var isHovered = false
+
+        var body: some View {
+            let highlight = tint ?? .primary
+            configuration.label
+                .foregroundStyle(tint ?? .primary)
+                .background(
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(highlight.opacity(configuration.isPressed ? 0.22 : isHovered ? 0.12 : 0))
+                )
+                .onHover { isHovered = $0 }
+                .animation(.easeOut(duration: 0.1), value: isHovered)
+        }
     }
 }
 

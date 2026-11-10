@@ -17,6 +17,7 @@ struct WhoIsThereApp: App {
         )
         store.showAll = UserDefaults.standard.bool(forKey: SettingsView.showAllKey)
         store.start()
+        StatusItemContextMenu.shared.install()
         _store = State(initialValue: store)
     }
 
