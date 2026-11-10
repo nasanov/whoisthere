@@ -84,6 +84,6 @@ The result is `build/whoisthere-<version>.zip`. Verify with:
 spctl -a -vv build/export/whoisthere.app   # accepted, source=Notarized Developer ID
 ```
 
----
+## License
 
-Created in [T3 Code](https://t3.codes).
+[MIT](LICENSE)
