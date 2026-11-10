@@ -1,1 +1,5 @@
 .superpowers/
+build/
+.build/
+whoisthere.xcodeproj/
+.impeccable/

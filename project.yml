@@ -1,0 +1,40 @@
+name: whoisthere
+options:
+  deploymentTarget:
+    macOS: "14.0"
+packages:
+  WhoIsThereCore:
+    path: .
+targets:
+  whoisthere:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - App
+    dependencies:
+      - package: WhoIsThereCore
+    info:
+      path: App/Info.plist
+      properties:
+        LSUIElement: true
+        CFBundleName: whoisthere
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+    settings:
+      base:
+        PRODUCT_NAME: whoisthere
+        PRODUCT_BUNDLE_IDENTIFIER: com.nasanov.whoisthere
+        ENABLE_HARDENED_RUNTIME: YES
+        INFOPLIST_FILE: App/Info.plist
+        SWIFT_VERSION: "6.0"
+        CODE_SIGN_STYLE: Automatic
+        GENERATE_INFOPLIST_FILE: NO
+      configs:
+        Debug:
+          CODE_SIGN_IDENTITY: "-"
+schemes:
+  whoisthere:
+    build:
+      targets:
+        whoisthere: all
