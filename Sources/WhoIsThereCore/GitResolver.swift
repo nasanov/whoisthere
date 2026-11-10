@@ -12,7 +12,7 @@ public enum GitResolver {
             var gitIsDir: ObjCBool = false
             if fm.fileExists(atPath: dotGit.path, isDirectory: &gitIsDir) {
                 return gitIsDir.boolValue
-                    ? info(repoRoot: dir, headDir: dotGit, isWorktree: false)
+                    ? info(repoName: dir.lastPathComponent, headDir: dotGit, isWorktree: false)
                     : worktreeInfo(dotGitFile: dotGit, base: dir)
             }
             if dir.path == "/" { return nil }
@@ -25,15 +25,23 @@ public enum GitResolver {
         let raw = text.dropFirst("gitdir:".count).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !raw.isEmpty else { return nil }
         let gitdir = resolvePath(raw, relativeTo: base)
+        // No commondir: the file points at a main git dir (e.g. `gitdir: ./.bare`).
         guard let common = read(gitdir.appendingPathComponent("commondir")), !common.isEmpty else {
-            return nil
+            return info(repoName: repoName(commonDir: gitdir), headDir: gitdir, isWorktree: false)
         }
         let commonDir = resolvePath(common, relativeTo: gitdir)
-        let repoRoot = commonDir.deletingLastPathComponent()
-        return info(repoRoot: repoRoot, headDir: gitdir, isWorktree: true)
+        return info(repoName: repoName(commonDir: commonDir), headDir: gitdir, isWorktree: true)
     }
 
-    private static func info(repoRoot: URL, headDir: URL, isWorktree: Bool) -> GitInfo? {
+    /// `proj/.git` and `proj/.bare` -> "proj"; a bare `foo.git` -> "foo"; a bare `foo` -> "foo".
+    private static func repoName(commonDir: URL) -> String {
+        let name = commonDir.lastPathComponent
+        if name == ".git" || name == ".bare" { return commonDir.deletingLastPathComponent().lastPathComponent }
+        if name.hasSuffix(".git"), name.count > 4 { return String(name.dropLast(4)) }
+        return name
+    }
+
+    private static func info(repoName: String, headDir: URL, isWorktree: Bool) -> GitInfo? {
         guard let head = read(headDir.appendingPathComponent("HEAD")), !head.isEmpty else {
             return nil
         }
@@ -44,7 +52,7 @@ public enum GitResolver {
         } else {
             branch = String(head.prefix(7))
         }
-        return GitInfo(repoName: repoRoot.lastPathComponent, branch: branch, isWorktree: isWorktree)
+        return GitInfo(repoName: repoName, branch: branch, isWorktree: isWorktree)
     }
 
     private static func resolvePath(_ path: String, relativeTo base: URL) -> URL {

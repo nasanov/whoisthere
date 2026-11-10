@@ -60,4 +60,40 @@ import Foundation
             .appendingPathComponent("whoisthere-missing-\(UUID().uuidString)/x").path
         #expect(GitResolver.resolve(cwd: path) == nil)
     }
+
+    /// `git clone --bare url proj/.bare` + `proj/.git` -> "gitdir: ./.bare" + worktrees in `proj/`.
+    @Test func dotBareLayout() throws {
+        let root = try makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let proj = root.appendingPathComponent("proj")
+        let bare = proj.appendingPathComponent(".bare")
+        try write("ref: refs/heads/main\n", to: bare.appendingPathComponent("HEAD"))
+        try write("gitdir: ./.bare\n", to: proj.appendingPathComponent(".git"))
+        let gitdir = bare.appendingPathComponent("worktrees/feat")
+        try write("ref: refs/heads/feat\n", to: gitdir.appendingPathComponent("HEAD"))
+        try write("../..\n", to: gitdir.appendingPathComponent("commondir"))
+        let wt = proj.appendingPathComponent("feat")
+        try write("gitdir: \(gitdir.path)\n", to: wt.appendingPathComponent(".git"))
+
+        #expect(GitResolver.resolve(cwd: wt.path)
+            == GitInfo(repoName: "proj", branch: "feat", isWorktree: true))
+        #expect(GitResolver.resolve(cwd: proj.path)
+            == GitInfo(repoName: "proj", branch: "main", isWorktree: false))
+    }
+
+    /// `git clone --bare url foo.git` + `git -C foo.git worktree add ../foo-main`.
+    @Test func dotGitSuffixedBareRepo() throws {
+        let root = try makeRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let bare = root.appendingPathComponent("code/foo.git")
+        try write("ref: refs/heads/main\n", to: bare.appendingPathComponent("HEAD"))
+        let gitdir = bare.appendingPathComponent("worktrees/foo-main")
+        try write("ref: refs/heads/main\n", to: gitdir.appendingPathComponent("HEAD"))
+        try write("../..\n", to: gitdir.appendingPathComponent("commondir"))
+        let wt = root.appendingPathComponent("code/foo-main")
+        try write("gitdir: \(gitdir.path)\n", to: wt.appendingPathComponent(".git"))
+
+        #expect(GitResolver.resolve(cwd: wt.path)
+            == GitInfo(repoName: "foo", branch: "main", isWorktree: true))
+    }
 }
