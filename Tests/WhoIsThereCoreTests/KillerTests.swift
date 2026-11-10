@@ -95,6 +95,54 @@ private func pids(_ server: Int32, _ snapshot: [ProcessRecord]) -> Set<Int32> {
     #expect(reused.isEmpty)
 }
 
+@Test func excludedRootYieldsNothingEvenWithChildren() {
+    #expect(pids(100, [rec(100, name: "claude", ports: [3000]), rec(101, ppid: 100)]).isEmpty)
+    #expect(pids(100, [rec(100, name: "zsh", ports: [3000]), rec(101, ppid: 100)]).isEmpty)
+    #expect(pids(100, [rec(100, ports: [3000], uid: 0), rec(101, ppid: 100)]).isEmpty)
+    #expect(pids(100, [rec(100, name: "Code Helper", ports: [3000],
+                           path: "/Applications/Visual Studio Code.app/Contents/x"),
+                       rec(101, ppid: 100)]).isEmpty)
+}
+
+@Test func nestedStarterSubtreeIsSparedButShellsAreWalked() {
+    let snapshot = [
+        rec(100, ports: [3000]),
+        rec(101, ppid: 100, name: "claude"),
+        rec(102, ppid: 101),
+        rec(103, ppid: 100, name: "sh"),
+        rec(104, ppid: 103),
+        rec(105, ppid: 100, name: "tmux"),
+        rec(106, ppid: 105),
+        rec(107, ppid: 100, uid: 0),
+        rec(108, ppid: 107),
+    ]
+    #expect(pids(100, snapshot) == [100, 104])
+}
+
+@Test func enrichRevealsClaudeUnderServer() {
+    let snapshot = [rec(100, ports: [3000]), rec(101, ppid: 100), rec(102, ppid: 101)]
+    let enrich: (ProcessRecord) -> ProcessRecord = { p in
+        var p = p
+        if p.pid == 101 { p.arguments = ["node", "/opt/lib/node_modules/@anthropic-ai/claude-code/cli.js"] }
+        return p
+    }
+    let targets = KillPlanner.targets(for: ProcessIdentity(pid: 100, startTime: t0), snapshot: snapshot,
+                                      currentUID: uid, enrich: enrich)
+    #expect(Set(targets.map(\.pid)) == [100])
+}
+
+@Test func enrichAppliesToWrapperCandidate() {
+    let snapshot = [rec(90, name: "node"), rec(100, ppid: 90, ports: [3000])]
+    let enrich: (ProcessRecord) -> ProcessRecord = { p in
+        var p = p
+        if p.pid == 90 { p.arguments = ["node", "/opt/lib/node_modules/npm/bin/npm-cli.js", "run", "dev"] }
+        return p
+    }
+    let targets = KillPlanner.targets(for: ProcessIdentity(pid: 100, startTime: t0), snapshot: snapshot,
+                                      currentUID: uid, enrich: enrich)
+    #expect(targets.map(\.pid) == [100, 90])
+}
+
 @Test func cyclicSnapshotTerminates() {
     let snapshot = [rec(100, ppid: 101, ports: [3000]), rec(101, ppid: 100)]
     #expect(pids(100, snapshot) == [100, 101])

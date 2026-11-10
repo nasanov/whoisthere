@@ -64,6 +64,28 @@ import os
         #expect(LiveProcessSource.kinfoInfo(1)?.uid == 0)
     }
 
+    @Test func enrichFillsPathAndArguments() throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        process.arguments = ["30"]
+        try process.run()
+        defer {
+            process.terminate()
+            process.waitUntilExit()
+        }
+        let pid = process.processIdentifier
+        let info = try #require(LiveProcessSource.basicInfo(pid))
+        let bare = ProcessRecord(pid: pid, ppid: info.ppid, uid: info.uid, name: info.comm,
+                                 executablePath: nil, arguments: [], cwd: nil,
+                                 startTime: info.startTime, residentBytes: 0, listeningPorts: [])
+
+        let enriched = LiveProcessSource().enrich(bare)
+        #expect(enriched.executablePath == "/bin/sleep")
+        #expect(enriched.name == "sleep")
+        #expect(enriched.arguments == ["/bin/sleep", "30"])
+        #expect(enriched.startTime == bare.startTime)
+    }
+
     @Test func findsSpawnedServer() throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("whoisthere-\(UUID().uuidString)")

@@ -9,49 +9,73 @@ public enum KillPlanner {
 
     /// The server and its descendants, plus its direct parent when that parent is a
     /// package runner with no other listening descendants. Returns `[]` when the server
-    /// identity is no longer in the snapshot (exited or PID reused).
+    /// identity is no longer in the snapshot (exited or PID reused) or the server itself
+    /// is excluded. `enrich` fills in details (path, argv) the snapshot may lack; it is
+    /// applied to every candidate before it is checked.
     public static func targets(for server: ProcessIdentity, snapshot: [ProcessRecord],
-                               currentUID: UInt32) -> [ProcessIdentity] {
+                               currentUID: UInt32,
+                               enrich: (ProcessRecord) -> ProcessRecord = { $0 }) -> [ProcessIdentity] {
         var byPid: [Int32: ProcessRecord] = [:]
         var children: [Int32: [ProcessRecord]] = [:]
         for p in snapshot where byPid[p.pid] == nil {
             byPid[p.pid] = p
             children[p.ppid, default: []].append(p)
         }
-        guard let root = byPid[server.pid], root.startTime == server.startTime else { return [] }
+        guard let found = byPid[server.pid], found.startTime == server.startTime else { return [] }
+        let root = enrich(found)
+        guard !isExcluded(root, currentUID: currentUID) else { return [] }
 
-        let serverTree = subtree(of: root, children: children)
-        var result = serverTree.filter { !isExcluded($0, currentUID: currentUID) }
-
-        let serverPids = Set(serverTree.map(\.pid))
-        if let parent = byPid[root.ppid], !serverPids.contains(parent.pid), isPackageRunner(parent),
-           !isExcluded(parent, currentUID: currentUID) {
-            let othersListening = subtree(of: parent, children: children).contains {
-                $0.pid != parent.pid && !serverPids.contains($0.pid) && !$0.listeningPorts.isEmpty
+        // Breadth-first walk. Shells are spared but walked through (`sh -c` children);
+        // barriers (starters, other users, pid <= 1) are spared together with their subtree.
+        var seen: Set<Int32> = [root.pid]
+        var queue = [root]
+        var result = [root]
+        var index = 0
+        while index < queue.count {
+            for raw in children[queue[index].pid] ?? [] where seen.insert(raw.pid).inserted {
+                let child = enrich(raw)
+                if isBarrier(child, currentUID: currentUID) { continue }
+                queue.append(child)
+                if !isExcluded(child, currentUID: currentUID) { result.append(child) }
             }
-            if !othersListening { result.append(parent) }
+            index += 1
+        }
+
+        if let raw = byPid[root.ppid], !seen.contains(raw.pid) {
+            let parent = enrich(raw)
+            if isPackageRunner(parent), !isExcluded(parent, currentUID: currentUID) {
+                let targeted = Set(result.map(\.pid))
+                let othersListening = descendants(of: parent.pid, children: children).contains {
+                    !targeted.contains($0.pid) && !$0.listeningPorts.isEmpty
+                }
+                if !othersListening { result.append(parent) }
+            }
         }
         return result.map(\.identity)
     }
 
-    /// `root` followed by its descendants (breadth-first); each pid appears once.
-    private static func subtree(of root: ProcessRecord,
-                                children: [Int32: [ProcessRecord]]) -> [ProcessRecord] {
-        var seen: Set<Int32> = [root.pid]
-        var ordered = [root]
-        var index = 0
-        while index < ordered.count {
-            for child in children[ordered[index].pid] ?? [] where seen.insert(child.pid).inserted {
+    /// All descendants of `pid` (cycle-safe, excluding `pid` itself).
+    private static func descendants(of pid: Int32,
+                                    children: [Int32: [ProcessRecord]]) -> [ProcessRecord] {
+        var seen: Set<Int32> = [pid]
+        var ordered: [ProcessRecord] = []
+        var frontier = [pid]
+        while let next = frontier.popLast() {
+            for child in children[next] ?? [] where seen.insert(child.pid).inserted {
                 ordered.append(child)
+                frontier.append(child.pid)
             }
-            index += 1
         }
         return ordered
     }
 
+    /// Never signaled, and nothing beneath it is either.
+    private static func isBarrier(_ p: ProcessRecord, currentUID: UInt32) -> Bool {
+        p.pid <= 1 || p.uid != currentUID || StarterDetector.classify(p) != nil
+    }
+
     private static func isExcluded(_ p: ProcessRecord, currentUID: UInt32) -> Bool {
-        p.pid <= 1 || p.uid != currentUID || shells.contains(p.name)
-            || StarterDetector.classify(p) != nil
+        isBarrier(p, currentUID: currentUID) || shells.contains(p.name)
     }
 
     private static func isPackageRunner(_ p: ProcessRecord) -> Bool {

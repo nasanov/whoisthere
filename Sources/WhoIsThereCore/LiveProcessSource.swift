@@ -3,6 +3,12 @@ import Foundation
 
 public protocol ProcessSource: Sendable {
     func snapshot() throws -> [ProcessRecord]
+    /// Fills the details `snapshot()` skips for non-listening processes (path, argv, cwd).
+    func enrich(_ record: ProcessRecord) -> ProcessRecord
+}
+
+extension ProcessSource {
+    public func enrich(_ record: ProcessRecord) -> ProcessRecord { record }
 }
 
 public enum LiveProcessSourceError: Error, Equatable {
@@ -45,6 +51,13 @@ public struct LiveProcessSource: ProcessSource {
         }
 
         return records.keys.sorted().compactMap { records[$0] }
+    }
+
+    /// User-owned processes get path, name, argv, cwd and memory; others get the path only.
+    public func enrich(_ record: ProcessRecord) -> ProcessRecord {
+        var record = record
+        Self.enrich(&record, owned: record.uid == getuid())
+        return record
     }
 
     // MARK: - libproc helpers
