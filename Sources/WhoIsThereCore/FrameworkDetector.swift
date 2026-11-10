@@ -6,8 +6,20 @@ public enum FrameworkDetector {
         (["nuxt"], .nuxt), (["svelte-kit"], .svelteKit), (["ng", "serve"], .angular),
         (["webpack"], .webpack), (["manage.py", "runserver"], .django), (["flask"], .flask),
         (["uvicorn"], .fastAPI), (["rails"], .rails), (["puma"], .rails),
-        (["phx.server"], .phoenix),
+        (["phx.server"], .phoenix), (["next-server"], .next),
     ]
+
+    private static let jsRuntimes: Set<String> = ["node", "bun", "deno"]
+
+    /// Only JS runtimes may borrow a framework from a package.json: a Python or Ruby
+    /// server sitting in (or below) a JS project folder is not that project's framework.
+    public static func isJSRuntime(_ p: ProcessRecord) -> Bool {
+        if jsRuntimes.contains(p.name.lowercased()) { return true }
+        guard let first = p.arguments.first?.split(whereSeparator: \.isWhitespace).first else {
+            return false
+        }
+        return jsRuntimes.contains((String(first) as NSString).lastPathComponent.lowercased())
+    }
 
     private static let dependencyRules: [(String, Framework)] = [
         ("next", .next), ("vite", .vite), ("astro", .astro), ("@remix-run/dev", .remix),
@@ -36,10 +48,14 @@ public enum FrameworkDetector {
         return nil
     }
 
-    /// Splits on whitespace and "/", lowercased.
+    /// Splits each argument on whitespace (node's process.title rewrites argv into one
+    /// string) and keeps only the last path component of each word, lowercased, so a
+    /// directory named `next/` or `flask/` never tags a framework.
     private static func tokenize(_ arguments: [String]) -> [String] {
         arguments.flatMap { arg in
-            arg.lowercased().split(whereSeparator: { $0 == "/" || $0.isWhitespace }).map(String.init)
+            arg.lowercased().split(whereSeparator: \.isWhitespace).compactMap { word in
+                word.split(separator: "/").last.map(String.init)
+            }
         }
     }
 

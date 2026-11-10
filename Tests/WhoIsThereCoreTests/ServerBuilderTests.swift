@@ -94,3 +94,52 @@ private let chain = [
     #expect(ServerBuilder.pathExists(NSTemporaryDirectory()))
     #expect(ServerBuilder.pathExists("/etc/hosts"))
 }
+
+// MARK: - Framework detection only trusts package.json for JS runtimes
+
+@Test func pythonServerIgnoresAncestorPackageJSON() {
+    // Real row: `python3 -m http.server` in ~/Desktop/portfolio/.claude/prototypes was tagged
+    // "Next" from ~/Desktop/portfolio/package.json.
+    let nextJSON = Data(#"{"dependencies":{"next":"16"}}"#.utf8)
+    let b = ServerBuilder(home: home, currentUID: uid, fileExists: { _ in true },
+                          resolveGit: { _ in nil }, readPackageJSON: { _ in nextJSON })
+    let python = rec(300, name: "Python", args: ["/opt/homebrew/bin/python3", "-m", "http.server", "4719"],
+                     cwd: "/Users/me/portfolio/.claude/prototypes", ports: [4719],
+                     path: "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python")
+    let node = rec(301, args: ["node", "server.js"], cwd: "/Users/me/portfolio", ports: [3000])
+    let s = b.build(snapshot: [python, node], showAll: false, memory: memory())
+    #expect(s.first { $0.pid == 300 }?.framework == nil)
+    #expect(s.first { $0.pid == 301 }?.framework == .next)
+}
+
+@Test func packageJSONWalkStopsAtGitRootAndHome() throws {
+    let fm = FileManager.default
+    let root = fm.temporaryDirectory.appendingPathComponent("whoisthere-\(UUID().uuidString)")
+        .resolvingSymlinksInPath()
+    defer { try? fm.removeItem(at: root) }
+    let home = root.appendingPathComponent("home")
+    let json = Data(#"{"dependencies":{"next":"16"}}"#.utf8)
+    func mkdir(_ path: String) throws -> URL {
+        let url = root.appendingPathComponent(path)
+        try fm.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+    // A git repo without a package.json; a package.json above home that must never be read.
+    _ = try mkdir("home/repo/.git")
+    try json.write(to: root.appendingPathComponent("package.json"))
+    let inRepo = try mkdir("home/repo/apps/web")
+    let plain = try mkdir("home/plain/sub")
+    let outside = try mkdir("elsewhere/sub")
+
+    #expect(ServerBuilder.nearestPackageJSON(from: inRepo.path, home: home.path) == nil)
+    #expect(ServerBuilder.nearestPackageJSON(from: plain.path, home: home.path) == nil)
+    #expect(ServerBuilder.nearestPackageJSON(from: outside.path, home: home.path) == nil)
+
+    try json.write(to: home.appendingPathComponent("package.json"))
+    #expect(ServerBuilder.nearestPackageJSON(from: plain.path, home: home.path) == json)
+    #expect(ServerBuilder.nearestPackageJSON(from: inRepo.path, home: home.path) == nil)
+    try json.write(to: root.appendingPathComponent("home/repo/package.json"))
+    #expect(ServerBuilder.nearestPackageJSON(from: inRepo.path, home: home.path) == json)
+    try json.write(to: outside.appendingPathComponent("package.json"))
+    #expect(ServerBuilder.nearestPackageJSON(from: outside.path, home: home.path) == json)
+}

@@ -37,7 +37,8 @@ public struct ServerBuilder: Sendable {
                 memory.remember(id, Remembered(starter: starter, git: git))
             }
 
-            let packageJSON = folderExists ? p.cwd.flatMap(readPackageJSON) : nil
+            let packageJSON = folderExists && FrameworkDetector.isJSRuntime(p)
+                ? p.cwd.flatMap(readPackageJSON) : nil
             let framework = FrameworkDetector.detect(arguments: p.arguments, packageJSON: packageJSON)
 
             let stale: StaleReason?
@@ -83,12 +84,16 @@ public struct ServerBuilder: Sendable {
         return errno != ENOENT && errno != ENOTDIR
     }
 
-    private static func nearestPackageJSON(from cwd: String, home: String) -> Data? {
+    /// Walks up from `cwd`, stopping after the git root (a directory containing `.git`)
+    /// or `home`, whichever comes first. A `cwd` outside `home` only checks itself.
+    static func nearestPackageJSON(from cwd: String, home: String) -> Data? {
         var dir = URL(fileURLWithPath: cwd, isDirectory: true).standardizedFileURL
         let stop = URL(fileURLWithPath: home, isDirectory: true).standardizedFileURL.path
+        let insideHome = dir.path.hasPrefix(stop + "/")
         while true {
             if let data = try? Data(contentsOf: dir.appendingPathComponent("package.json")) { return data }
-            if dir.path == stop || dir.path == "/" { return nil }
+            if !insideHome || dir.path == stop || dir.path == "/"
+                || pathExists(dir.appendingPathComponent(".git").path) { return nil }
             dir = dir.deletingLastPathComponent()
         }
     }
