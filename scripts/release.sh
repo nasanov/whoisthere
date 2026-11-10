@@ -56,6 +56,11 @@ xcrun notarytool submit build/whoisthere.zip \
 
 xcrun stapler staple "$APP"
 
+# Fail the release unless the ticket is stapled and Gatekeeper accepts the app
+# (set -e aborts on either non-zero exit).
+xcrun stapler validate "$APP"
+spctl -a -vv "$APP"
+
 VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")
 FINAL="build/whoisthere-${VERSION}.zip"
 rm -f "$FINAL"
