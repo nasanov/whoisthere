@@ -9,6 +9,7 @@ struct SettingsView: View {
     let store: ServerStore
     @AppStorage(SettingsView.showAllKey) private var showAll = false
     @State private var launchAtLogin = false
+    @State private var needsApproval = false
     @State private var loginError: String?
 
     var body: some View {
@@ -18,6 +19,15 @@ struct SettingsView: View {
                     get: { launchAtLogin },
                     set: { setLaunchAtLogin($0) }
                 ))
+                if needsApproval {
+                    HStack(spacing: 6) {
+                        Text("Approve in System Settings › Login Items")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Button("Open") { SMAppService.openSystemSettingsLoginItems() }
+                            .controlSize(.small)
+                    }
+                }
                 if let loginError {
                     Text(loginError)
                         .font(.caption)
@@ -30,8 +40,11 @@ struct SettingsView: View {
         .padding(20)
         .frame(width: 360)
         .onAppear {
-            launchAtLogin = SMAppService.mainApp.status == .enabled
+            readLoginStatus()
             NSApp.activate()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            readLoginStatus() // back from System Settings
         }
         .onChange(of: showAll) { _, value in store.showAll = value }
     }
@@ -43,11 +56,19 @@ struct SettingsView: View {
             } else {
                 try SMAppService.mainApp.unregister()
             }
-            launchAtLogin = enabled
             loginError = nil
         } catch {
-            launchAtLogin = SMAppService.mainApp.status == .enabled
             loginError = error.localizedDescription
         }
+        readLoginStatus()
+    }
+
+    /// `.requiresApproval` means registered but blocked until the user allows it in
+    /// System Settings; the toggle shows it as on so the hint makes sense.
+    private func readLoginStatus() {
+        let status = SMAppService.mainApp.status
+        launchAtLogin = status == .enabled || status == .requiresApproval
+        needsApproval = status == .requiresApproval
+        if needsApproval { loginError = nil } // the approval hint explains it
     }
 }
