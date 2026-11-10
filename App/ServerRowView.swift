@@ -6,6 +6,7 @@ struct ServerRowView: View {
     let server: DevServer
     let now: Date
     let isExpanded: Bool
+    let isKilling: Bool
     let onToggleDetails: () -> Void
     let onKill: () -> Void
 
@@ -63,7 +64,14 @@ struct ServerRowView: View {
                 }
                 IconButton(symbol: isExpanded ? "chevron.up" : "chevron.down", help: "Details",
                            action: onToggleDetails)
-                IconButton(symbol: "xmark.circle", help: "Kill", tint: .red, action: onKill)
+                if isKilling {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(width: 24, height: 24)
+                        .help("Stopping…")
+                } else {
+                    IconButton(symbol: "xmark.circle", help: "Kill", tint: .red, action: onKill)
+                }
             }
         }
         .padding(.horizontal, 8)

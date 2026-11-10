@@ -4,6 +4,8 @@ import Observation
 @MainActor @Observable
 public final class ServerStore {
     public private(set) var servers: [DevServer] = []
+    /// Servers with a kill in progress (SIGTERM sent, grace period running).
+    public private(set) var killing: Set<ProcessIdentity> = []
 
     public var showAll: Bool = false {
         didSet {
@@ -20,6 +22,9 @@ public final class ServerStore {
     }
 
     public var pollInterval: Duration { isMenuOpen ? .seconds(2) : .seconds(12) }
+
+    /// Background (menu closed) refreshes shouldn't compete with the user's work.
+    public var refreshPriority: TaskPriority { isMenuOpen ? .userInitiated : .utility }
 
     @ObservationIgnored private let source: ProcessSource
     @ObservationIgnored private let builder: ServerBuilder
@@ -52,7 +57,7 @@ public final class ServerStore {
         refreshGeneration += 1
         let generation = refreshGeneration
         let source = source, builder = builder, memory = memory, showAll = showAll
-        let result = await Task.detached(priority: .userInitiated) { () -> [DevServer]? in
+        let result = await Task.detached(priority: refreshPriority) { () -> [DevServer]? in
             guard let snapshot = try? source.snapshot() else { return nil }
             return builder.build(snapshot: snapshot, showAll: showAll, memory: memory)
         }.value
@@ -63,6 +68,7 @@ public final class ServerStore {
     }
 
     public func kill(_ server: DevServer) async {
+        guard killing.insert(server.id).inserted else { return }
         let source = source, killer = killer, currentUID = currentUID
         // Unstructured so cancelling the caller can't cut the grace period short.
         let work = Task {
@@ -73,6 +79,7 @@ public final class ServerStore {
             }.value
             if !targets.isEmpty { await killer.terminate(targets) }
             await self.refresh()
+            self.killing.remove(server.id)
         }
         await work.value
     }

@@ -152,4 +152,26 @@ private func makeStore(source: ProcessSource, signaler: FakeSignaler,
         await first.value
         #expect(store.servers.isEmpty)
     }
+
+    @Test func refreshPriorityFollowsMenu() {
+        let store = makeStore(source: FakeSource([]), signaler: FakeSignaler(alive: [:]))
+        #expect(store.refreshPriority == .utility)
+        store.isMenuOpen = true
+        #expect(store.refreshPriority == .userInitiated)
+    }
+
+    @Test func killingTracksInProgressKill() async throws {
+        let source = FakeSource([server()])
+        let signaler = FakeSignaler(alive: [100: t0])
+        signaler.ignoreTerm = true // alive through the grace period
+        let store = makeStore(source: source, signaler: signaler, grace: .milliseconds(300))
+        await store.refresh()
+        let target = store.servers[0]
+        #expect(store.killing.isEmpty)
+        let kill = Task { await store.kill(target) }
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(store.killing == [target.id])
+        await kill.value
+        #expect(store.killing.isEmpty)
+    }
 }

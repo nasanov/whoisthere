@@ -28,6 +28,7 @@ struct ServerListView: View {
                                     server: server,
                                     now: context.date,
                                     isExpanded: expanded.contains(server.id),
+                                    isKilling: store.killing.contains(server.id),
                                     onToggleDetails: { toggle(server.id) },
                                     onKill: { Task { await store.kill(server) } }
                                 )
