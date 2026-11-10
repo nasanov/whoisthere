@@ -6,6 +6,9 @@ struct WhoIsThereApp: App {
     @State private var store: ServerStore
 
     init() {
+        #if DEBUG
+        ScreenshotRenderer.runIfRequested()
+        #endif
         let memoryURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appending(path: "whoisthere/memory.json")
         let store = ServerStore(

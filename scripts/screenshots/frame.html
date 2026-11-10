@@ -1,0 +1,61 @@
+<!doctype html>
+<!-- Stages a raw menu render (from the app's debug screenshot mode) on a macOS-style desktop.
+     Query: ?theme=light|dark&shot=<png path>&count=<menu bar count>
+     The canvas is sized by the caller (Chrome --window-size); the panel hangs off the right. -->
+<html><head><meta charset="utf-8"><style>
+  html, body { margin: 0; }
+  body { width: 100vw; height: 100vh; overflow: hidden; position: relative;
+         font: 13px -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; }
+  .wall { position: absolute; inset: 0; }
+  .light .wall { background:
+      radial-gradient(900px 600px at 15% 20%, #c7d7ff 0%, transparent 60%),
+      radial-gradient(800px 700px at 85% 90%, #ffd6c2 0%, transparent 60%),
+      radial-gradient(700px 500px at 70% 10%, #e2d3ff 0%, transparent 60%),
+      linear-gradient(160deg, #eef1fb, #f6ece6); }
+  .dark .wall { background:
+      radial-gradient(900px 600px at 15% 20%, #233a7a 0%, transparent 60%),
+      radial-gradient(800px 700px at 85% 95%, #5a2a4e 0%, transparent 60%),
+      radial-gradient(700px 500px at 70% 5%, #3a2a7a 0%, transparent 60%),
+      linear-gradient(160deg, #0d1226, #1a1020); }
+  .bar { position: absolute; top: 0; left: 0; right: 0; height: 26px; display: flex; align-items: center;
+         padding: 0 14px; gap: 18px; backdrop-filter: blur(30px) saturate(1.6); }
+  .light .bar { background: rgba(255,255,255,.45); color: #111; }
+  .dark .bar { background: rgba(0,0,0,.32); color: #fff; }
+  .bar b { font-weight: 700; }
+  .bar .right { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+  .item { display: flex; align-items: center; gap: 4px; height: 22px; padding: 0 7px; border-radius: 5px; font-weight: 600; }
+  .light .item.on { background: rgba(0,0,0,.12); }
+  .dark .item.on { background: rgba(255,255,255,.2); }
+  .item svg { width: 16px; height: 16px; fill: currentColor; }
+  .panel { position: absolute; top: 32px; border-radius: 12px; overflow: hidden;
+           backdrop-filter: blur(40px) saturate(1.8); }
+  .light .panel { background: rgba(246,246,248,.86);
+           box-shadow: 0 0 0 .5px rgba(0,0,0,.18), 0 24px 60px rgba(30,30,60,.28), 0 6px 18px rgba(0,0,0,.12); }
+  .dark .panel { background: rgba(38,38,42,.84);
+           box-shadow: 0 0 0 .5px rgba(255,255,255,.16), 0 0 0 1.5px rgba(0,0,0,.5), 0 24px 60px rgba(0,0,0,.55); }
+  .panel img { display: block; width: 420px; }
+</style></head>
+<body>
+  <div class="wall"></div>
+  <div class="bar">
+    <b>Finder</b><span>File</span><span>Edit</span><span>View</span><span>Go</span><span>Window</span><span>Help</span>
+    <div class="right">
+      <span class="item on" id="icon"><svg viewBox="0 0 16 16"><path fill-rule="evenodd" d="M4.8 1.2 H11.2 A2.2 2.2 0 0 1 13.4 3.4 V12.6 A2.2 2.2 0 0 1 11.2 14.8 H4.8 A2.2 2.2 0 0 1 2.6 12.6 V3.4 A2.2 2.2 0 0 1 4.8 1.2 Z M5.2 4.35 H8.6 A0.65 0.65 0 0 1 8.6 5.65 H5.2 A0.65 0.65 0 0 1 5.2 4.35 Z M5.2 7.35 H8.6 A0.65 0.65 0 0 1 8.6 8.65 H5.2 A0.65 0.65 0 0 1 5.2 7.35 Z M5.2 10.35 H8.6 A0.65 0.65 0 0 1 8.6 11.65 H5.2 A0.65 0.65 0 0 1 5.2 10.35 Z M10.8 6.7 A1.3 1.3 0 1 1 10.8 9.3 A1.3 1.3 0 1 1 10.8 6.7 Z"/></svg><span id="count">6</span></span>
+      <span class="item"><svg viewBox="0 0 16 16"><path d="M8 12.6a1.3 1.3 0 1 1 0 2.6 1.3 1.3 0 0 1 0-2.6zM3.9 9.6a5.8 5.8 0 0 1 8.2 0l-1.1 1.1a4.2 4.2 0 0 0-6 0zM1.4 7.1a9.4 9.4 0 0 1 13.2 0l-1.1 1.1a7.8 7.8 0 0 0-11 0z"/></svg></span>
+      <span class="item"><svg viewBox="0 0 24 16"><rect x="1" y="3.5" width="19" height="9" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="3" y="5.5" width="12" height="5" rx="1.2"/><rect x="21" y="6.5" width="1.6" height="3" rx=".8"/></svg></span>
+      <span>Tue 10 Nov&nbsp;&nbsp;9:41</span>
+    </div>
+  </div>
+  <div class="panel"><img id="shot"></div>
+<script>
+  const q = new URLSearchParams(location.search);
+  document.body.className = q.get('theme') || 'light';
+  document.getElementById('count').textContent = q.get('count') || '6';
+  const img = document.getElementById('shot');
+  img.src = q.get('shot');
+  // Hang the panel under the menu bar icon, kept inside the screen edge.
+  const icon = document.getElementById('icon').getBoundingClientRect();
+  const left = Math.min(icon.left + icon.width / 2 - 210, innerWidth - 420 - 10);
+  document.querySelector('.panel').style.left = left + 'px';
+</script>
+</body></html>

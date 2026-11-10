@@ -43,6 +43,13 @@ public final class ServerStore {
         self.currentUID = currentUID
     }
 
+#if DEBUG
+    /// Replaces the list with fixed data, for screenshots. Debug builds only.
+    public func showSampleServers(_ servers: [DevServer]) {
+        self.servers = servers
+    }
+#endif
+
     public func start() {
         guard pollTask == nil else { return }
         startLoop(refreshImmediately: true)

@@ -4,7 +4,12 @@ import WhoIsThereCore
 
 struct ServerListView: View {
     let store: ServerStore
-    @State private var expanded: Set<ProcessIdentity> = []
+    @State private var expanded: Set<ProcessIdentity>
+
+    init(store: ServerStore, initiallyExpanded: Set<ProcessIdentity> = []) {
+        self.store = store
+        _expanded = State(initialValue: initiallyExpanded)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
