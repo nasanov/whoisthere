@@ -3,3 +3,4 @@ build/
 .build/
 whoisthere.xcodeproj/
 .impeccable/
+.DS_Store
