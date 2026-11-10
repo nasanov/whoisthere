@@ -22,7 +22,18 @@ struct DevServerFilterTests {
     @Test func excludesHomeItself() { #expect(!inc(rec(cwd: "/Users/a"))) }
     @Test func excludesOtherUID() { #expect(!inc(rec(uid: 502))) }
     @Test func excludesAppBundles() {
-        #expect(!inc(rec(path: "/Applications/Cursor.app/Contents/MacOS/Cursor")))
+        #expect(!inc(rec(name: "Cursor", path: "/Applications/Cursor.app/Contents/MacOS/Cursor")))
+    }
+    @Test func includesBundledPythonRuntime() {
+        let p = rec(name: "Python",
+                    path: "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python",
+                    args: ["python3", "-m", "http.server", "8000"], ports: [8000])
+        #expect(inc(p))
+        #expect(DevServerFilter.looksHTTP(p, framework: nil))
+    }
+    @Test func excludesAppHelperEvenWithPort() {
+        #expect(!inc(rec(name: "Cursor Helper (Plugin)",
+                         path: "/Applications/Cursor.app/Contents/Frameworks/Cursor Helper (Plugin).app/Contents/MacOS/Cursor Helper (Plugin)")))
     }
     @Test func showAllIncludesDenyListed() { #expect(inc(rec(name: "postgres", cwd: "/"), showAll: true)) }
     @Test func showAllStillRequiresOwnerAndPort() {

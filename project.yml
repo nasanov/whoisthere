@@ -21,6 +21,9 @@ targets:
         CFBundleName: whoisthere
         CFBundleShortVersionString: "0.1.0"
         CFBundleVersion: "1"
+        NSDesktopFolderUsageDescription: "whoisthere reads your project folders to show each dev server's git branch and framework."
+        NSDocumentsFolderUsageDescription: "whoisthere reads your project folders to show each dev server's git branch and framework."
+        NSDownloadsFolderUsageDescription: "whoisthere reads your project folders to show each dev server's git branch and framework."
     settings:
       base:
         PRODUCT_NAME: whoisthere

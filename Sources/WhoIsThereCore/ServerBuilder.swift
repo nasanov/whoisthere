@@ -8,7 +8,7 @@ public struct ServerBuilder: Sendable {
     private let readPackageJSON: @Sendable (String) -> Data?
 
     public init(home: String, currentUID: UInt32,
-                fileExists: @Sendable @escaping (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
+                fileExists: @Sendable @escaping (String) -> Bool = { ServerBuilder.pathExists($0) },
                 resolveGit: @Sendable @escaping (String) -> GitInfo? = { GitResolver.resolve(cwd: $0) },
                 readPackageJSON: (@Sendable (String) -> Data?)? = nil) {
         self.home = home
@@ -72,6 +72,15 @@ public struct ServerBuilder: Sendable {
             current = parent
         }
         return result
+    }
+
+    /// False only when the path is definitely gone (ENOENT / ENOTDIR). Any other failure,
+    /// notably EPERM/EACCES from macOS privacy protection (TCC) on Desktop/Documents/Downloads,
+    /// counts as existing, so a denied folder never shows as "folder deleted".
+    public static func pathExists(_ path: String) -> Bool {
+        var st = stat()
+        if lstat(path, &st) == 0 { return true }
+        return errno != ENOENT && errno != ENOTDIR
     }
 
     private static func nearestPackageJSON(from cwd: String, home: String) -> Data? {

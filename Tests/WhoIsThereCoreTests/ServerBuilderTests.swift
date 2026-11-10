@@ -87,3 +87,10 @@ private let chain = [
     _ = builder().build(snapshot: [hidden], showAll: false, memory: mem)
     #expect(mem.recall(hidden.identity) != nil)
 }
+
+@Test func defaultPathExistsDistinguishesMissingFromPresent() {
+    #expect(!ServerBuilder.pathExists("/nonexistent-\(UUID().uuidString)/x"))
+    #expect(!ServerBuilder.pathExists("/etc/hosts/child"))  // ENOTDIR
+    #expect(ServerBuilder.pathExists(NSTemporaryDirectory()))
+    #expect(ServerBuilder.pathExists("/etc/hosts"))
+}

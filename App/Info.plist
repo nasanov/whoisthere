@@ -20,5 +20,11 @@
 	<string>1</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>whoisthere reads your project folders to show each dev server's git branch and framework.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>whoisthere reads your project folders to show each dev server's git branch and framework.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>whoisthere reads your project folders to show each dev server's git branch and framework.</string>
 </dict>
 </plist>

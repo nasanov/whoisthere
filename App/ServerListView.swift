@@ -56,8 +56,7 @@ struct ServerListView: View {
         }
         .padding(6)
         .frame(width: 420)
-        .onAppear { store.isMenuOpen = true }
-        .onDisappear { store.isMenuOpen = false }
+        .background(MenuWindowObserver { store.isMenuOpen = $0 })
         .onChange(of: store.servers) { _, servers in
             expanded.formIntersection(servers.map(\.id))
         }
