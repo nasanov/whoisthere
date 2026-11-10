@@ -10,11 +10,11 @@ struct MenuBarLabel: View {
     @ViewBuilder
     private var icon: some View {
         if count == 0 {
-            Image(systemName: "network")
+            Image("MenuBarIcon")
                 .opacity(0.5)
         } else {
             HStack(spacing: 3) {
-                Image(systemName: "network")
+                Image("MenuBarIcon")
                 Text("\(count)")
             }
         }
