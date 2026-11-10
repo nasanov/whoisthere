@@ -19,32 +19,27 @@ public struct LiveProcessSource: ProcessSource {
         var listening: [Int32] = []
 
         for pid in try Self.allPids() {
-            guard let info = Self.bsdInfo(pid) else { continue }
-            let comm = Self.string(fromTuple: info.pbi_name).nonEmpty
-                ?? Self.string(fromTuple: info.pbi_comm)
-            let start = Date(timeIntervalSince1970: TimeInterval(info.pbi_start_tvsec)
-                + TimeInterval(info.pbi_start_tvusec) / 1_000_000)
+            guard let info = Self.basicInfo(pid) else { continue }
             var record = ProcessRecord(
-                pid: pid, ppid: Int32(bitPattern: info.pbi_ppid), uid: info.pbi_uid, name: comm,
-                executablePath: nil, arguments: [], cwd: nil, startTime: start,
+                pid: pid, ppid: info.ppid, uid: info.uid, name: info.comm,
+                executablePath: nil, arguments: [], cwd: nil, startTime: info.startTime,
                 residentBytes: 0, listeningPorts: [])
-            if info.pbi_uid == myUid {
+            if info.uid == myUid {
                 record.listeningPorts = Self.listeningPorts(pid)
                 if !record.listeningPorts.isEmpty { listening.append(pid) }
             }
             records[pid] = record
         }
 
-        // Enrich listening processes and their (user-owned) ancestors.
+        // Enrich listening processes and their ancestors. Other users' processes
+        // only get their executable path (proc_pidpath works across users).
         var enriched = Set<Int32>()
         for pid in listening {
             var current: Int32? = pid
             while let p = current, p > 0, !enriched.contains(p), var record = records[p] {
                 enriched.insert(p)
-                if record.uid == myUid {
-                    Self.enrich(&record)
-                    records[p] = record
-                }
+                Self.enrich(&record, owned: record.uid == myUid)
+                records[p] = record
                 current = record.ppid
             }
         }
@@ -67,11 +62,48 @@ public struct LiveProcessSource: ProcessSource {
         return pids.prefix(Int(written) / MemoryLayout<Int32>.size).filter { $0 > 0 }
     }
 
-    private static func bsdInfo(_ pid: Int32) -> proc_bsdinfo? {
+    struct BasicInfo: Equatable {
+        var ppid: Int32
+        var uid: UInt32
+        var comm: String
+        var startTime: Date
+    }
+
+    /// ppid, uid, comm and start time. `PROC_PIDTBSDINFO` fails with EPERM for other
+    /// users' processes (e.g. launchd, setuid-root `login`), so fall back to
+    /// `sysctl(KERN_PROC_PID)`, which reads the same kernel start-time field.
+    static func basicInfo(_ pid: Int32) -> BasicInfo? {
+        bsdInfo(pid) ?? kinfoInfo(pid)
+    }
+
+    static func bsdInfo(_ pid: Int32) -> BasicInfo? {
         var info = proc_bsdinfo()
         let size = Int32(MemoryLayout<proc_bsdinfo>.size)
         guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else { return nil }
-        return info
+        let comm = string(fromTuple: info.pbi_name).nonEmpty ?? string(fromTuple: info.pbi_comm)
+        return BasicInfo(
+            ppid: Int32(bitPattern: info.pbi_ppid), uid: info.pbi_uid, comm: comm,
+            startTime: startDate(seconds: Int64(info.pbi_start_tvsec),
+                                 microseconds: Int64(info.pbi_start_tvusec)))
+    }
+
+    static func kinfoInfo(_ pid: Int32) -> BasicInfo? {
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        // A vanished pid returns success with size 0.
+        guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, size > 0,
+              info.kp_proc.p_pid == pid else { return nil }
+        let start = info.kp_proc.p_un.__p_starttime
+        return BasicInfo(
+            ppid: info.kp_eproc.e_ppid, uid: info.kp_eproc.e_ucred.cr_uid,
+            comm: string(fromTuple: info.kp_proc.p_comm),
+            startTime: startDate(seconds: Int64(start.tv_sec),
+                                 microseconds: Int64(start.tv_usec)))
+    }
+
+    private static func startDate(seconds: Int64, microseconds: Int64) -> Date {
+        Date(timeIntervalSince1970: TimeInterval(seconds) + TimeInterval(microseconds) / 1_000_000)
     }
 
     private static func listeningPorts(_ pid: Int32) -> [UInt16] {
@@ -100,13 +132,14 @@ public struct LiveProcessSource: ProcessSource {
         return ports.sorted()
     }
 
-    private static func enrich(_ record: inout ProcessRecord) {
+    private static func enrich(_ record: inout ProcessRecord, owned: Bool) {
         let pid = record.pid
         if let path = executablePath(pid) {
             record.executablePath = path
             let base = (path as NSString).lastPathComponent
             if !base.isEmpty { record.name = base }
         }
+        guard owned else { return }
         record.cwd = cwd(pid)
         record.arguments = arguments(pid)
         record.residentBytes = residentBytes(pid)

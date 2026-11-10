@@ -36,6 +36,34 @@ import os
         URL(fileURLWithPath: path).resolvingSymlinksInPath().path
     }
 
+    @Test func includesOtherUserProcessesAndFullAncestorChain() throws {
+        let records = try LiveProcessSource().snapshot()
+        let byPid = Dictionary(records.map { ($0.pid, $0) }, uniquingKeysWith: { a, _ in a })
+
+        let launchd = try #require(byPid[1], "pid 1 missing from snapshot")
+        #expect(launchd.uid == 0)
+        #expect(launchd.startTime.timeIntervalSince1970 > 0)
+
+        // The test runner's ancestor chain reaches launchd through the snapshot.
+        var current: Int32? = getpid()
+        var hops = 0
+        while let pid = current, pid != 1, hops < 64 {
+            current = byPid[pid]?.ppid
+            hops += 1
+        }
+        #expect(current == 1)
+    }
+
+    @Test func sysctlFallbackMatchesBsdInfo() throws {
+        // Start time is identity, so both sources must agree for the same process.
+        let viaBsd = try #require(LiveProcessSource.bsdInfo(getpid()))
+        let viaSysctl = try #require(LiveProcessSource.kinfoInfo(getpid()))
+        #expect(viaSysctl.startTime == viaBsd.startTime)
+        #expect(viaSysctl.ppid == viaBsd.ppid)
+        #expect(viaSysctl.uid == viaBsd.uid)
+        #expect(LiveProcessSource.kinfoInfo(1)?.uid == 0)
+    }
+
     @Test func findsSpawnedServer() throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("whoisthere-\(UUID().uuidString)")
