@@ -1,7 +1,7 @@
 import Foundation
 
 public enum DevServerFilter {
-    private static let denyList: Set<String> = ["postgres", "mysqld", "redis-server", "mongod", "claude"]
+    private static let denyList: Set<String> = ["postgres", "mysqld", "redis-server", "mongod"]
     private static let httpNames: Set<String> = ["node", "bun", "deno", "python", "python3", "ruby", "php", "go", "java"]
 
     public static func includes(_ p: ProcessRecord, home: String, currentUID: UInt32, showAll: Bool) -> Bool {
@@ -9,7 +9,7 @@ public enum DevServerFilter {
         if showAll { return !p.listeningPorts.isEmpty }
         guard !visiblePorts(p).isEmpty else { return false }
         guard let cwd = p.cwd, cwd.hasPrefix(home + "/") else { return false }
-        guard !denyList.contains(p.name) else { return false }
+        guard !denyList.contains(p.name), !StarterDetector.isClaude(p) else { return false }
         // App bundles (editors, helpers) are excluded, except language runtimes that ship
         // inside one (e.g. Xcode/CLT/Homebrew python3 runs as `Python.app/.../Python`).
         if let path = p.executablePath, path.contains(".app/Contents/"),

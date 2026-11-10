@@ -59,3 +59,13 @@ struct DevServerFilterTests {
         #expect(!DevServerFilter.looksHTTP(rec(name: "weird"), framework: nil))
     }
 }
+
+extension DevServerFilterTests {
+    @Test func excludesNativeClaudeButNotClaudeCodeNamedProject() {
+        let claude = rec(name: "2.1.306", path: "/Users/a/.local/share/claude/versions/2.1.306",
+                         args: ["claude", "--verbose"], ports: [51234])
+        #expect(!inc(claude))
+        let project = rec(args: ["node", "/Users/a/code/claude-code-ui/node_modules/.bin/vite"])
+        #expect(inc(project))
+    }
+}

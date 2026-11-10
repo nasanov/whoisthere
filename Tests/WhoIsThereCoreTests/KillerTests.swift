@@ -77,7 +77,7 @@ private func pids(_ server: Int32, _ snapshot: [ProcessRecord]) -> Set<Int32> {
         rec(100, ports: [3000]),
         rec(101, ppid: 100, name: "claude"),
         rec(102, ppid: 100, name: "zsh"),
-        rec(103, ppid: 100, name: "node", args: ["node", "/x/claude-code/cli.js"]),
+        rec(103, ppid: 100, name: "node", args: ["node", "/x/@anthropic-ai/claude-code/cli.js"]),
         rec(104, ppid: 100, name: "Code Helper", path: "/Applications/Visual Studio Code.app/x"),
         rec(105, ppid: 100, uid: 0),
         rec(106, ppid: 100),
