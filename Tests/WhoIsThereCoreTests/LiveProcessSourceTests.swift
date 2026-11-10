@@ -130,3 +130,35 @@ import os
         print("LiveProcessSource: \(listening) listening processes, snapshot took \(elapsed)")
     }
 }
+
+extension LiveProcessSourceTests {
+    @Test func zombieCountsAsGone() throws {
+        var pid: pid_t = 0
+        let argv: [UnsafeMutablePointer<CChar>?] = [strdup("/usr/bin/true"), nil]
+        defer { argv.forEach { free($0) } }
+        #expect(posix_spawn(&pid, "/usr/bin/true", nil, nil, argv, nil) == 0)
+        var reaped = false
+        defer { if !reaped { var status: Int32 = 0; waitpid(pid, &status, 0) } }
+
+        // Not reaped yet: once it exits it stays a zombie (SZOMB) until waitpid.
+        let deadline = Date().addingTimeInterval(5)
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        repeat {
+            Thread.sleep(forTimeInterval: 0.02)
+            size = MemoryLayout<kinfo_proc>.stride
+            _ = sysctl(&mib, 4, &info, &size, nil, 0)
+        } while info.kp_proc.p_stat != SZOMB && Date() < deadline
+        try #require(info.kp_proc.p_stat == SZOMB)
+
+        #expect(LiveProcessSource.bsdInfo(pid) == nil)
+        #expect(LiveProcessSource.kinfoInfo(pid) == nil)
+        #expect(LiveProcessSource.basicInfo(pid) == nil)
+        #expect(DarwinSignaler().startTime(of: pid) == nil)
+
+        var status: Int32 = 0
+        waitpid(pid, &status, 0)
+        reaped = true
+    }
+}

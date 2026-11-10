@@ -82,7 +82,8 @@ public struct LiveProcessSource: ProcessSource {
         var startTime: Date
     }
 
-    /// ppid, uid, comm and start time. `PROC_PIDTBSDINFO` fails with EPERM for other
+    /// ppid, uid, comm and start time; nil for exited (including zombie) processes.
+    /// `PROC_PIDTBSDINFO` fails with EPERM for other
     /// users' processes (e.g. launchd, setuid-root `login`), so fall back to
     /// `sysctl(KERN_PROC_PID)`, which reads the same kernel start-time field.
     static func basicInfo(_ pid: Int32) -> BasicInfo? {
@@ -92,7 +93,8 @@ public struct LiveProcessSource: ProcessSource {
     static func bsdInfo(_ pid: Int32) -> BasicInfo? {
         var info = proc_bsdinfo()
         let size = Int32(MemoryLayout<proc_bsdinfo>.size)
-        guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else { return nil }
+        guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size,
+              info.pbi_status != UInt32(SZOMB) else { return nil }
         let comm = string(fromTuple: info.pbi_name).nonEmpty ?? string(fromTuple: info.pbi_comm)
         return BasicInfo(
             ppid: Int32(bitPattern: info.pbi_ppid), uid: info.pbi_uid, comm: comm,
@@ -104,9 +106,9 @@ public struct LiveProcessSource: ProcessSource {
         var info = kinfo_proc()
         var size = MemoryLayout<kinfo_proc>.stride
         var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
-        // A vanished pid returns success with size 0.
+        // A vanished pid returns success with size 0. A zombie has exited: treat it as gone.
         guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, size > 0,
-              info.kp_proc.p_pid == pid else { return nil }
+              info.kp_proc.p_pid == pid, info.kp_proc.p_stat != SZOMB else { return nil }
         let start = info.kp_proc.p_un.__p_starttime
         return BasicInfo(
             ppid: info.kp_eproc.e_ppid, uid: info.kp_eproc.e_ucred.cr_uid,
