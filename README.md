@@ -72,33 +72,6 @@ open build/Build/Products/Debug/whoisthere.app
 swift test   # core library tests
 ```
 
-To regenerate the screenshots above (needs Google Chrome):
-
-```sh
-scripts/screenshots.sh
-```
-
-## Releasing
-
-Needs a Developer ID Application certificate in your keychain. Store notarization credentials once:
-
-```sh
-xcrun notarytool store-credentials <profile> --apple-id <you@example.com> --team-id <TEAMID>
-```
-
-Then build, sign, notarize and staple:
-
-```sh
-DEVELOPMENT_TEAM=<TEAMID> NOTARY_PROFILE=<profile> scripts/release.sh
-```
-
-This produces, in `build/`:
-
-- `whoisthere-<version>.dmg` and `whoisthere-<version>.zip`, both notarized
-- `whoisthere.rb`, the Homebrew cask with the DMG's checksum filled in
-
-To publish: create a GitHub release tagged `v<version>` with the DMG and zip attached, copy `whoisthere.rb` to `Casks/` in [nasanov/homebrew-tap](https://github.com/nasanov/homebrew-tap) and push, then update the version in the Download link above.
-
 ## License
 
 [MIT](LICENSE)
