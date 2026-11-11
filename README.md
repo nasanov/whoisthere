@@ -16,6 +16,20 @@
   </picture>
 </p>
 
+## Install
+
+**Homebrew**
+
+```sh
+brew install nasanov/tap/whoisthere
+```
+
+**Download**
+
+Get [whoisthere-0.1.0.dmg](https://github.com/nasanov/whoisthere/releases/latest/download/whoisthere-0.1.0.dmg) from the [latest release](https://github.com/nasanov/whoisthere/releases/latest), open it, and drag whoisthere to Applications. It's signed and notarized by Apple, so it opens without warnings.
+
+whoisthere lives in the menu bar (no Dock icon). Right-click its icon for Settings and Quit, and turn on **Launch at login** in Settings.
+
 ## Why
 
 Between your own projects, git worktrees, and the servers Claude Code starts for you, ports fill up fast. `lsof -i :3000` tells you `node 48213`, which doesn't say *which project* that is. whoisthere does.
@@ -78,11 +92,12 @@ Then build, sign, notarize and staple:
 DEVELOPMENT_TEAM=<TEAMID> NOTARY_PROFILE=<profile> scripts/release.sh
 ```
 
-The result is `build/whoisthere-<version>.zip`. Verify with:
+This produces, in `build/`:
 
-```sh
-spctl -a -vv build/export/whoisthere.app   # accepted, source=Notarized Developer ID
-```
+- `whoisthere-<version>.dmg` and `whoisthere-<version>.zip`, both notarized
+- `whoisthere.rb`, the Homebrew cask with the DMG's checksum filled in
+
+To publish: create a GitHub release tagged `v<version>` with the DMG and zip attached, copy `whoisthere.rb` to `Casks/` in [nasanov/homebrew-tap](https://github.com/nasanov/homebrew-tap) and push, then update the version in the Download link above.
 
 ## License
 

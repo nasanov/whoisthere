@@ -96,7 +96,7 @@ cask "whoisthere" do
   desc "Menu bar app showing which dev servers are running, with one-click stop"
   homepage "https://github.com/nasanov/whoisthere"
 
-  depends_on macos: ">= :sonoma"
+  depends_on macos: :sonoma
 
   app "whoisthere.app"
 
